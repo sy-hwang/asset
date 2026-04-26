@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>자산관리 대시보드</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Personal Asset Viewer</p>
+          <h1>Seoyoung's Asset</h1>
+          <p class="hero-copy">
+            월별 순자산 변화와 최근 자산 구성을 빠르게 읽을 수 있도록 정리한 웹 뷰어입니다.
+          </p>
+        </div>
+        <div class="hero-panel">
+          <span class="hero-label">기준월</span>
+          <strong id="updatedMonth">-</strong>
+          <span id="sourceFile" class="hero-meta">-</span>
+        </div>
+      </header>
+
+      <section class="data-controls">
+        <div class="data-controls-head">
+          <h2>데이터 관리</h2>
+          <p>엑셀 파일을 업로드해 대시보드 데이터를 갱신할 수 있습니다.</p>
+        </div>
+        <div class="data-controls-actions">
+          <button type="button" id="importExcelButton" class="control-button control-button-light">엑셀 가져오기</button>
+          <input id="importExcelInput" type="file" accept=".xlsx,.xls" hidden />
+        </div>
+        <p id="entryFeedback" class="entry-feedback" aria-live="polite"></p>
+      </section>
+
+      <nav class="tab-nav" aria-label="대시보드 탭">
+        <button type="button" class="tab-button is-active" data-tab-target="overviewTabPanel">Overview</button>
+        <button type="button" class="tab-button" data-tab-target="taxTabPanel">절세관리</button>
+      </nav>
+
+      <section id="overviewTabPanel" class="tab-panel is-active">
+        <main class="dashboard-grid">
+          <section class="metric-row">
+            <article class="metric-card">
+              <span class="metric-label">현재 순자산</span>
+              <strong id="netWorthValue">-</strong>
+              <span id="netWorthSubtext" class="metric-subtext">-</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">누적 투자원금</span>
+              <strong id="investedValue">-</strong>
+              <span id="profitRateValue" class="metric-subtext">-</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">누적 평가손익</span>
+              <strong id="profitValue">-</strong>
+              <span id="latestDeltaValue" class="metric-subtext">-</span>
+            </article>
+          </section>
+
+          <section class="panel panel-wide">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Core Trend</p>
+                <h2>순자산 / 투자액 추이</h2>
+              </div>
+              <div class="legend">
+                <span class="legend-dot legend-primary"></span>
+                <span>순자산</span>
+                <span class="legend-dot legend-secondary"></span>
+                <span>투자액</span>
+              </div>
+            </div>
+            <div class="chart-frame">
+              <svg id="netWorthChart" viewBox="0 0 960 652" role="img" aria-label="2025년 9월부터의 순자산과 투자액 추이 그래프"></svg>
+            </div>
+          </section>
+
+          <section class="panel panel-latest-mix">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Latest Mix</p>
+                <h2>자산 구성 도넛</h2>
+              </div>
+            </div>
+            <div class="allocation-chart-wrap">
+              <svg id="allocationDonut" viewBox="0 0 320 320" role="img" aria-label="카테고리별 자산 구성 도넛 그래프"></svg>
+            </div>
+            <div id="allocationList" class="allocation-list"></div>
+          </section>
+
+          <section class="panel panel-full">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Asset Detail</p>
+                <h2>세부 자산 카드</h2>
+              </div>
+            </div>
+            <div id="detailCards" class="detail-card-grid"></div>
+          </section>
+        </main>
+      </section>
+
+      <section id="taxTabPanel" class="tab-panel">
+        <section class="tax-grid">
+          <article class="panel tax-card tax-card-pension">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Pension Credit</p>
+                <h2>연금납입현황</h2>
+              </div>
+            </div>
+            <div class="tax-card-body">
+              <div class="tax-row">
+                <strong>연금저축펀드</strong>
+                <span id="pensionFundPaidText">0만원 / 900만원</span>
+              </div>
+              <div class="tax-progress">
+                <div id="pensionFundProgress" class="tax-progress-fill"></div>
+              </div>
+              <div class="tax-row">
+                <strong>IRP</strong>
+                <span id="irpPaidText">0만원 / 300만원</span>
+              </div>
+              <div class="tax-progress">
+                <div id="irpProgress" class="tax-progress-fill"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel tax-card tax-card-isa">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">ISA Limit</p>
+                <h2>ISA 납입 현황</h2>
+              </div>
+            </div>
+            <div class="tax-card-body">
+              <div class="tax-row">
+                <strong>총 납입 한도</strong>
+                <span id="isaTotalLimitText">0원</span>
+              </div>
+              <div class="tax-row">
+                <strong>지금까지 납입한 금액</strong>
+                <span id="isaPaidFullText">0원</span>
+              </div>
+              <div class="tax-row">
+                <strong>올해 남은 한도</strong>
+                <span id="isaRemainingLimitText">0원</span>
+              </div>
+              <div class="tax-progress">
+                <div id="isaProgress" class="tax-progress-fill"></div>
+              </div>
+              <p id="isaMonthlyGuideText" class="tax-guide">매달 0원씩 납입하면 목표를 달성할 수 있어요!</p>
+              <p id="isaLimitMeta" class="tax-meta">한도 계산 기준: 2024년 개설, 매년 1월 2,000만원 증액, 최대 1억원</p>
+            </div>
+          </article>
+        </section>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
