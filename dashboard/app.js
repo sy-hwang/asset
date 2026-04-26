@@ -2,6 +2,37 @@ let data = null;
 let latest = null;
 let previous = null;
 let chartRecords = [];
+const VALUE_GRID_STEP = 50000000;
+const INVESTED_COLOR = "#ffd400";
+const INVESTED_POINT_FILL = "#fffbe0";
+const DEFAULT_TEXT_COLOR = "#2f3437";
+const PENSION_FUND_LIMIT = 6000000;
+const IRP_LIMIT = 3000000;
+const ISA_OPEN_YEAR = 2024;
+const ISA_ANNUAL_LIMIT = 20000000;
+const ISA_MAX_LIMIT = 100000000;
+const CATEGORY_PALETTE = [
+  { base: "#4C9AFF", accent: "#74B2FF", tint: "#EAF3FF" },
+  { base: "#2DBE7F", accent: "#57CF9A", tint: "#E9FAF2" },
+  { base: "#FF6B6B", accent: "#FF8E8E", tint: "#FFEDED" },
+  { base: "#FF9F43", accent: "#FFB56D", tint: "#FFF3E7" },
+  { base: "#2EC4B6", accent: "#59D3C8", tint: "#E9FBF8" },
+  { base: "#FFD93D", accent: "#FFE56A", tint: "#FFFBE8" },
+  { base: "#A66BFF", accent: "#BC8CFF", tint: "#F2EAFF" },
+  { base: "#FF7AA2", accent: "#FF9BBB", tint: "#FFF0F5" },
+  { base: "#00B8D9", accent: "#33C9E4", tint: "#E8F9FC" },
+  { base: "#6BCB77", accent: "#8AD894", tint: "#ECF9EE" },
+  { base: "#5E81FF", accent: "#809BFF", tint: "#EDF1FF" },
+  { base: "#FF8A5B", accent: "#FFA481", tint: "#FFF1EB" },
+  { base: "#3DDC97", accent: "#68E4AF", tint: "#EAFBF3" },
+  { base: "#9B5DE5", accent: "#B082EB", tint: "#F2EBFB" },
+  { base: "#00C2A8", accent: "#33D0BA", tint: "#E7FAF6" },
+  { base: "#FF5DA2", accent: "#FF82B8", tint: "#FFEAF3" },
+  { base: "#38BDF8", accent: "#69CDF9", tint: "#EAF7FE" },
+  { base: "#F97316", accent: "#FB9449", tint: "#FFF1E7" },
+  { base: "#22C55E", accent: "#4FD17E", tint: "#E8F9EE" },
+  { base: "#7C83FD", accent: "#9A9FFD", tint: "#EEF0FF" },
+];
 
 const currency = new Intl.NumberFormat("ko-KR", {
   style: "currency",
@@ -13,6 +44,15 @@ const percent = new Intl.NumberFormat("ko-KR", {
   style: "percent",
   maximumFractionDigits: 1,
 });
+
+function extractTrailingCategory(text) {
+  const match = String(text ?? "").match(/\(([^()]+)\)\s*$/);
+  return match ? match[1].trim() : "";
+}
+
+function stripTrailingCategory(text) {
+  return String(text ?? "").replace(/\s*\([^()]*\)\s*$/, "").trim();
+}
 
 function cloneData(source) {
   return JSON.parse(JSON.stringify(source));
@@ -47,6 +87,7 @@ function recalculateDerivedFields() {
   data.records.forEach((record, index) => {
     record.categories = record.categories ?? {};
     record.investedCategories = record.investedCategories ?? {};
+    record.monthlyInvestedCategories = record.monthlyInvestedCategories ?? {};
     record.netWorth = sumValues(record.categories);
     record.invested = sumValues(record.investedCategories);
     record.profit = record.netWorth - record.invested;
@@ -117,7 +158,7 @@ function formatTrendMoney(value) {
   let text = "";
 
   if (abs >= 100000000) {
-    text = `${(abs / 100000000).toFixed(1)}억`;
+    text = `${(abs / 100000000).toFixed(2)}억`;
   } else if (abs >= 10000000) {
     text = `${(abs / 10000000).toFixed(1)}천`;
   } else {
@@ -134,6 +175,14 @@ function formatTrendAxisMoney(value) {
   return `${(value / 100000000).toFixed(1)}억`;
 }
 
+function formatManwon(value) {
+  return `${Math.round((value || 0) / 10000).toLocaleString("ko-KR")}만원`;
+}
+
+function formatWonFull(value) {
+  return `${Math.round(value || 0).toLocaleString("ko-KR")}원`;
+}
+
 function setText(id, value) {
   document.getElementById(id).textContent = value;
 }
@@ -145,8 +194,8 @@ function makeSvgNode(tag, attrs = {}) {
 }
 
 function categorizeAsset(name) {
-  const categoryMatch = name.match(/\((부동산|투자|연금|저축)\)\s*$/);
-  if (categoryMatch) return categoryMatch[1];
+  const category = extractTrailingCategory(name);
+  if (category) return category;
   if (name.includes("보험담보대출")) return "투자";
   if (name.includes("연금") || name.includes("IRP")) return "연금";
   if (name.includes("청약") || name.includes("저축")) return "저축";
@@ -157,45 +206,116 @@ function categorizeAsset(name) {
 }
 
 function parseCategoryKey(name) {
-  const match = String(name).match(/^(.*)\s+\((부동산|투자|연금|저축)\)\s*$/);
-  if (!match) {
+  const category = extractTrailingCategory(name);
+  if (!category) {
     return {
       itemName: String(name).trim(),
       category: categorizeAsset(String(name)),
     };
   }
   return {
-    itemName: match[1].trim(),
-    category: match[2],
+    itemName: stripTrailingCategory(name),
+    category,
   };
 }
 
 function getCategoryOrder() {
-  return ["부동산", "투자", "연금", "저축"];
+  const discovered = new Set();
+  (data?.records ?? []).forEach((record) => {
+    Object.keys(record.categories ?? {}).forEach((name) => {
+      const category = categorizeAsset(name);
+      if (category) discovered.add(category);
+    });
+    Object.keys(record.investedCategories ?? {}).forEach((name) => {
+      const category = categorizeAsset(name);
+      if (category) discovered.add(category);
+    });
+  });
+
+  return [...discovered].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function getCategoryPaletteIndex(category) {
+  const orderedCategories = getCategoryOrder();
+  const index = orderedCategories.indexOf(category);
+  if (index < 0) return 0;
+  return index % CATEGORY_PALETTE.length;
 }
 
 function getCategoryColor(category) {
-  const colorMap = {
-    부동산: "#157a6e",
-    투자: "#ff7f50",
-    연금: "#ffd400",
-    저축: "#82aaff",
-  };
-  return colorMap[category] ?? "#999999";
+  return CATEGORY_PALETTE[getCategoryPaletteIndex(category)].base;
+}
+
+function getCategoryAccentColor(category) {
+  return CATEGORY_PALETTE[getCategoryPaletteIndex(category)].accent;
 }
 
 function getCategoryTint(category) {
-  const tintMap = {
-    부동산: "rgba(21, 122, 110, 0.06)",
-    투자: "rgba(255, 127, 80, 0.08)",
-    연금: "rgba(255, 212, 0, 0.10)",
-    저축: "rgba(130, 170, 255, 0.10)",
-  };
-  return tintMap[category] ?? "rgba(55, 53, 47, 0.04)";
+  return CATEGORY_PALETTE[getCategoryPaletteIndex(category)].tint;
 }
 
 function cleanAssetName(name) {
   return name.replace(/\s*\([^)]*\)/g, "").trim();
+}
+
+function sumInvestedByKeywords(record, keywords) {
+  if (!record?.investedCategories) return 0;
+  const loweredKeywords = keywords.map((keyword) => String(keyword).toLowerCase());
+  return Object.entries(record.investedCategories).reduce((sum, [name, value]) => {
+    const loweredName = String(name).toLowerCase();
+    const isMatched = loweredKeywords.some((keyword) => loweredName.includes(keyword));
+    return isMatched ? sum + Number(value || 0) : sum;
+  }, 0);
+}
+
+function getPreviousYearEndRecord(currentYear) {
+  const candidates = data.records.filter((record) => Number(String(record.date).split("/")[0]) < currentYear);
+  return candidates[candidates.length - 1] ?? null;
+}
+
+function calculateCurrentYearContribution(keywords) {
+  const currentYear = Number(String(latest?.date ?? "").split("/")[0]);
+  if (!Number.isFinite(currentYear)) return 0;
+  const currentInvested = sumInvestedByKeywords(latest, keywords);
+  const previousYearEndRecord = getPreviousYearEndRecord(currentYear);
+  const previousInvested = sumInvestedByKeywords(previousYearEndRecord, keywords);
+  return Math.max(currentInvested - previousInvested, 0);
+}
+
+function calculateCurrentYearMonthlyContribution(keywords, options = {}) {
+  const positiveOnly = options.positiveOnly === true;
+  const fromYear = Number.isFinite(options.fromYear) ? options.fromYear : null;
+  const currentYear = Number(String(latest?.date ?? "").split("/")[0]);
+  if (!Number.isFinite(currentYear)) return 0;
+  return data.records.reduce((sum, record) => {
+    const recordYear = Number(String(record.date).split("/")[0]);
+    if (!Number.isFinite(recordYear)) return sum;
+    if (fromYear !== null) {
+      if (recordYear < fromYear || recordYear > currentYear) return sum;
+    } else if (recordYear !== currentYear) {
+      return sum;
+    }
+    const monthlyValue = sumInvestedByKeywords(
+      { investedCategories: record.monthlyInvestedCategories ?? {} },
+      keywords
+    );
+    if (positiveOnly) {
+      return sum + Math.max(monthlyValue, 0);
+    }
+    return sum + monthlyValue;
+  }, 0);
+}
+
+function getIsaLimitByYear(year) {
+  const elapsedYears = Math.max(year - ISA_OPEN_YEAR + 1, 0);
+  return Math.min(elapsedYears * ISA_ANNUAL_LIMIT, ISA_MAX_LIMIT);
+}
+
+function setProgressWidth(id, value, limit) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const ratio = limit <= 0 ? 0 : Math.min(Math.max(value / limit, 0), 1);
+  node.style.width = `${Math.max(ratio * 100, 0)}%`;
 }
 
 function renderSummary() {
@@ -211,6 +331,38 @@ function renderSummary() {
   setText("profitRateValue", `누적 수익률 ${percent.format(profitRate)}`);
   setText("profitValue", formatEok(latest.profit));
   setText("latestDeltaValue", `최근 한 달 증감 ${formatSigned(latest.delta)}`);
+}
+
+function renderTaxManagement() {
+  const [currentYearText, currentMonthText] = String(latest?.date ?? "").split("/");
+  const currentYear = Number(currentYearText);
+  const currentMonth = Number(currentMonthText);
+  const pensionFundPaid = calculateCurrentYearContribution(["연금저축"]);
+  const irpPaid = calculateCurrentYearContribution(["irp"]);
+  const isaPaidFromMonthly = calculateCurrentYearMonthlyContribution(["isa"], {
+    positiveOnly: true,
+    fromYear: ISA_OPEN_YEAR,
+  });
+  const isaPaid = isaPaidFromMonthly > 0 ? isaPaidFromMonthly : calculateCurrentYearContribution(["isa"]);
+  const isaLimit = Number.isFinite(currentYear) ? getIsaLimitByYear(currentYear) : 0;
+  const isaRemainingLimit = Math.max(isaLimit - isaPaid, 0);
+  const remainingMonths = Number.isFinite(currentMonth) ? Math.max(13 - currentMonth, 1) : 1;
+  const isaMonthlyTarget = Math.ceil(isaRemainingLimit / remainingMonths);
+
+  setText("pensionFundPaidText", `${formatManwon(pensionFundPaid)} / ${formatManwon(PENSION_FUND_LIMIT)}`);
+  setText("irpPaidText", `${formatManwon(irpPaid)} / ${formatManwon(IRP_LIMIT)}`);
+  setText("isaTotalLimitText", formatWonFull(isaLimit));
+  setText("isaPaidFullText", formatWonFull(isaPaid));
+  setText("isaRemainingLimitText", formatWonFull(isaRemainingLimit));
+  setText("isaMonthlyGuideText", `💡 매달 ${formatWonFull(isaMonthlyTarget)}씩 납입하면 목표를 달성할 수 있어요!`);
+  setText(
+    "isaLimitMeta",
+    `한도 계산 기준: ${ISA_OPEN_YEAR}년 개설, 매년 1월 ${formatManwon(ISA_ANNUAL_LIMIT)} 증액, 최대 ${formatManwon(ISA_MAX_LIMIT)}`
+  );
+
+  setProgressWidth("pensionFundProgress", pensionFundPaid, PENSION_FUND_LIMIT);
+  setProgressWidth("irpProgress", irpPaid, IRP_LIMIT);
+  setProgressWidth("isaProgress", isaPaid, isaLimit);
 }
 
 function shouldShowInvestedSeries(points) {
@@ -268,13 +420,12 @@ function drawNetWorthChart() {
   const padding = { top: 20, right: 16, bottom: 48, left: 74 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const min = 300000000;
-  const max = 600000000;
-  const range = Math.max(max - min, 1);
+  const values = chartRecords.flatMap((item) => [item.netWorth, item.invested]).filter((value) => value !== null);
+  const { min, max, range } = getSteppedTrendBounds(values, VALUE_GRID_STEP);
+  const gridValues = getGridValuesByStep(min, max, VALUE_GRID_STEP);
 
   svg.innerHTML = "";
 
-  const gridValues = Array.from({ length: 4 }, (_, index) => min + (range * index) / 3);
   gridValues.forEach((gridValue) => {
     const y = padding.top + chartHeight - ((gridValue - min) / range) * chartHeight;
     svg.appendChild(
@@ -309,6 +460,22 @@ function drawNetWorthChart() {
     };
   });
 
+  if (shouldShowInvestedSeries(points)) {
+    drawSeries(
+      svg,
+      points,
+      "invested",
+      "line-path-secondary",
+      { stroke: INVESTED_COLOR },
+      {
+        r: 6,
+        fill: INVESTED_POINT_FILL,
+        stroke: INVESTED_COLOR,
+        "stroke-width": 2.8,
+      }
+    );
+  }
+
   drawSeries(
     svg,
     points,
@@ -320,22 +487,6 @@ function drawNetWorthChart() {
       class: "point-dot",
     }
   );
-
-  if (shouldShowInvestedSeries(points)) {
-    drawSeries(
-      svg,
-      points,
-      "invested",
-      "line-path-secondary",
-      { stroke: "#ffd400" },
-      {
-        r: 6,
-        fill: "#fffbe0",
-        stroke: "#ffd400",
-        "stroke-width": 2.8,
-      }
-    );
-  }
 
   const labelStep = Math.max(Math.ceil(chartRecords.length / 6), 1);
   points.forEach((point, index) => {
@@ -380,8 +531,8 @@ function drawNetWorthChart() {
     cx: padding.left,
     cy: padding.top,
     r: 7.4,
-    fill: "#fffbe0",
-    stroke: "#ffd400",
+    fill: INVESTED_POINT_FILL,
+    stroke: INVESTED_COLOR,
     "stroke-width": 3.4,
     visibility: "hidden",
     "pointer-events": "none",
@@ -393,7 +544,7 @@ function drawNetWorthChart() {
     "pointer-events": "none",
   });
   const tooltipWidth = 540;
-  const tooltipHeight = 232;
+  const tooltipHeight = 276;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
@@ -420,14 +571,21 @@ function drawNetWorthChart() {
   const tooltipInvested = makeSvgNode("text", {
     x: 28,
     y: 154,
-    fill: "#b69500",
+    fill: INVESTED_COLOR,
     "font-size": "24",
     "font-weight": "700",
   });
   const tooltipProfit = makeSvgNode("text", {
     x: 28,
     y: 200,
-    fill: "#ff7f50",
+    fill: DEFAULT_TEXT_COLOR,
+    "font-size": "24",
+    "font-weight": "700",
+  });
+  const tooltipProfitRate = makeSvgNode("text", {
+    x: 28,
+    y: 246,
+    fill: "#2f3437",
     "font-size": "24",
     "font-weight": "700",
   });
@@ -436,6 +594,7 @@ function drawNetWorthChart() {
   tooltipGroup.appendChild(tooltipNet);
   tooltipGroup.appendChild(tooltipInvested);
   tooltipGroup.appendChild(tooltipProfit);
+  tooltipGroup.appendChild(tooltipProfitRate);
   svg.appendChild(tooltipGroup);
 
   function setTooltipVisible(isVisible) {
@@ -479,6 +638,10 @@ function drawNetWorthChart() {
       point.invested === null ? "투자액 -" : `투자액 ${formatKrw(point.invested)}`;
     tooltipProfit.textContent =
       point.invested === null ? "수익금 -" : `수익금 ${formatKrw(point.netWorth - point.invested)}`;
+    tooltipProfitRate.textContent =
+      point.invested === null || point.invested <= 0
+        ? "누적 수익률 -"
+        : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
 
     const tooltipX = Math.min(Math.max(point.x + 10, padding.left), width - padding.right - tooltipWidth);
     const tooltipY = Math.min(
@@ -582,8 +745,12 @@ function renderAllocation() {
 
   orderedEntries.forEach(([name, value]) => {
     const color = getCategoryColor(name);
+    const accentColor = getCategoryAccentColor(name);
     const item = document.createElement("article");
     item.className = "allocation-item";
+    item.style.setProperty("--category-color", color);
+    item.style.setProperty("--category-color-accent", accentColor);
+    item.style.setProperty("--category-color-soft", `${color}1A`);
 
     const title = document.createElement("strong");
     title.textContent = name;
@@ -593,12 +760,10 @@ function renderAllocation() {
 
     const track = document.createElement("div");
     track.className = "allocation-track";
-    track.style.background = `${color}1A`;
 
     const fill = document.createElement("div");
     fill.className = "allocation-fill";
     fill.style.width = `${Math.max((value / maxValue) * 100, 1)}%`;
-    fill.style.background = `linear-gradient(90deg, ${color}, ${color}cc)`;
     track.appendChild(fill);
 
     item.appendChild(title);
@@ -651,6 +816,40 @@ function getAutoTrendBounds(values) {
   };
 }
 
+function getSteppedTrendBounds(values, step = VALUE_GRID_STEP) {
+  if (values.length === 0) {
+    return { min: 0, max: step, range: step };
+  }
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  let min = Math.floor(minValue / step) * step;
+  let max = Math.ceil(maxValue / step) * step;
+
+  if (min === max) {
+    if (min >= 0) {
+      max = min + step;
+      min = Math.max(0, min - step);
+    } else {
+      min -= step;
+      max += step;
+    }
+  }
+
+  return {
+    min,
+    max,
+    range: Math.max(max - min, step),
+  };
+}
+
+function getGridValuesByStep(min, max, step = VALUE_GRID_STEP) {
+  const values = [];
+  for (let value = min; value <= max + step * 0.001; value += step) {
+    values.push(value);
+  }
+  return values;
+}
+
 function createScaleFromUnit(bounds, valuePerPixel, chartHeight) {
   const range = Math.max(valuePerPixel * chartHeight, bounds.range, 1);
   let min = (bounds.min + bounds.max) / 2 - range / 2;
@@ -669,7 +868,7 @@ function createScaleFromUnit(bounds, valuePerPixel, chartHeight) {
   };
 }
 
-function renderTrendChart(points, color, height = 140, scale = null) {
+function renderTrendChart(points, _color, height = 140, scale = null) {
   const width = 920;
   const padding = { top: 18, right: 76, bottom: 28, left: 56 };
   const chartWidth = width - padding.left - padding.right;
@@ -680,7 +879,7 @@ function renderTrendChart(points, color, height = 140, scale = null) {
     return makeSvgNode("svg", { viewBox: `0 0 ${width} ${height}` });
   }
 
-  const localBounds = getAutoTrendBounds(values);
+  const localBounds = getSteppedTrendBounds(values, VALUE_GRID_STEP);
   const resolvedScale =
     scale && Number.isFinite(scale.min) && Number.isFinite(scale.max)
       ? {
@@ -699,7 +898,7 @@ function renderTrendChart(points, color, height = 140, scale = null) {
     "aria-label": "월별 추이 그래프",
   });
 
-  const gridValues = Array.from({ length: 3 }, (_, index) => min + (range * index) / 2);
+  const gridValues = getGridValuesByStep(min, max, VALUE_GRID_STEP);
   gridValues.forEach((gridValue) => {
     const y = padding.top + chartHeight - ((gridValue - min) / range) * chartHeight;
     svg.appendChild(
@@ -736,6 +935,22 @@ function renderTrendChart(points, color, height = 140, scale = null) {
     };
   });
 
+  if (shouldShowInvestedSeries(mapped)) {
+    drawSeries(
+      svg,
+      mapped,
+      "invested",
+      "line-path-secondary",
+      { stroke: INVESTED_COLOR },
+      {
+        r: 6.6,
+        fill: INVESTED_POINT_FILL,
+        stroke: INVESTED_COLOR,
+        "stroke-width": 3.2,
+      }
+    );
+  }
+
   drawSeries(
     svg,
     mapped,
@@ -749,22 +964,6 @@ function renderTrendChart(points, color, height = 140, scale = null) {
       stroke: "#157a6e",
     }
   );
-
-  if (shouldShowInvestedSeries(mapped)) {
-    drawSeries(
-      svg,
-      mapped,
-      "invested",
-      "line-path-secondary",
-      { stroke: "#ffd400" },
-      {
-        r: 6.6,
-        fill: "#fffbe0",
-        stroke: "#ffd400",
-        "stroke-width": 3.2,
-      }
-    );
-  }
 
   const first = mapped[0];
   const last = mapped[mapped.length - 1];
@@ -811,8 +1010,8 @@ function renderTrendChart(points, color, height = 140, scale = null) {
     cx: padding.left,
     cy: padding.top,
     r: 7.4,
-    fill: "#fffbe0",
-    stroke: "#ffd400",
+    fill: INVESTED_POINT_FILL,
+    stroke: INVESTED_COLOR,
     "stroke-width": 3.4,
     visibility: "hidden",
     "pointer-events": "none",
@@ -824,7 +1023,7 @@ function renderTrendChart(points, color, height = 140, scale = null) {
     "pointer-events": "none",
   });
   const tooltipWidth = 540;
-  const tooltipHeight = 232;
+  const tooltipHeight = 276;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
@@ -851,14 +1050,21 @@ function renderTrendChart(points, color, height = 140, scale = null) {
   const tooltipInvested = makeSvgNode("text", {
     x: 28,
     y: 154,
-    fill: "#b69500",
+    fill: INVESTED_COLOR,
     "font-size": "24",
     "font-weight": "700",
   });
   const tooltipProfit = makeSvgNode("text", {
     x: 28,
     y: 200,
-    fill: "#ff7f50",
+    fill: DEFAULT_TEXT_COLOR,
+    "font-size": "24",
+    "font-weight": "700",
+  });
+  const tooltipProfitRate = makeSvgNode("text", {
+    x: 28,
+    y: 246,
+    fill: "#2f3437",
     "font-size": "24",
     "font-weight": "700",
   });
@@ -867,6 +1073,7 @@ function renderTrendChart(points, color, height = 140, scale = null) {
   tooltipGroup.appendChild(tooltipNet);
   tooltipGroup.appendChild(tooltipInvested);
   tooltipGroup.appendChild(tooltipProfit);
+  tooltipGroup.appendChild(tooltipProfitRate);
   svg.appendChild(tooltipGroup);
 
   function setTooltipVisible(isVisible) {
@@ -910,6 +1117,10 @@ function renderTrendChart(points, color, height = 140, scale = null) {
       point.invested === null ? "투자액 -" : `투자액 ${formatKrw(point.invested)}`;
     tooltipProfit.textContent =
       point.invested === null ? "수익금 -" : `수익금 ${formatKrw(point.netWorth - point.invested)}`;
+    tooltipProfitRate.textContent =
+      point.invested === null || point.invested <= 0
+        ? "누적 수익률 -"
+        : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
 
     const tooltipX = Math.min(Math.max(point.x + 10, padding.left), width - padding.right - tooltipWidth);
     const tooltipY = Math.min(
@@ -959,19 +1170,10 @@ function renderDetailCards() {
 
   container.innerHTML = "";
 
-  const visibleCategories = getCategoryOrder().filter((category) => category !== "저축");
+  const visibleCategories = getCategoryOrder();
   const trendSeriesMap = Object.fromEntries(visibleCategories.map((category) => [category, getCategoryTrend(category)]));
-  const fixedScales = {
-    부동산: { min: 350000000, max: 450000000 },
-    투자: { min: 0, max: 100000000 },
-    연금: { min: 0, max: 100000000 },
-  };
 
   getCategoryOrder().forEach((category) => {
-    if (category === "저축") {
-      return;
-    }
-
     const items = [...(grouped[category] ?? [])].sort((a, b) => {
       if (category === "부동산") {
         const aNegative = a.value < 0 ? 1 : 0;
@@ -1020,14 +1222,16 @@ function renderDetailCards() {
 
     const trendWrap = document.createElement("div");
     trendWrap.className = "detail-trend";
-    trendWrap.appendChild(renderTrendChart(trendSeriesMap[category], color, chartHeight, fixedScales[category] ?? null));
+    trendWrap.appendChild(renderTrendChart(trendSeriesMap[category], color, chartHeight, null));
     body.appendChild(trendWrap);
 
     const list = document.createElement("div");
     list.className = "detail-list";
 
     items.forEach((item) => {
-      const tone = item.value < 0 ? "#e06a52" : "#4c7cf0";
+      const isPositiveTotal = item.value > 0;
+      const investedValue = Number(latest.investedCategories?.[item.name] ?? 0);
+      const shouldShowInvestedOverlay = Math.abs(item.value - investedValue) > 0.5;
       const row = document.createElement("article");
       row.className = "detail-item";
 
@@ -1036,18 +1240,31 @@ function renderDetailCards() {
 
       const amount = document.createElement("span");
       amount.textContent = formatKrw(item.value);
-      amount.style.color = tone;
+      amount.style.color = item.value < 0 ? "#e06a52" : "#2c9b62";
       amount.style.fontWeight = "700";
 
       const bar = document.createElement("div");
       bar.className = "detail-bar";
 
-      const fill = document.createElement("div");
-      fill.className = "detail-bar-fill";
-      fill.style.width = `${Math.max((Math.abs(item.value) / maxAbs) * 100, 4)}%`;
-      fill.style.background = `linear-gradient(90deg, ${tone}, ${tone}cc)`;
+      if (isPositiveTotal) {
+        const totalFill = document.createElement("div");
+        totalFill.className = "detail-bar-fill detail-bar-fill-total";
+        totalFill.style.width = `${Math.max((Math.abs(item.value) / maxAbs) * 100, 4)}%`;
+        bar.appendChild(totalFill);
 
-      bar.appendChild(fill);
+        if (shouldShowInvestedOverlay) {
+          const investedFill = document.createElement("div");
+          investedFill.className = "detail-bar-fill detail-bar-fill-invested";
+          investedFill.style.width = `${Math.max((Math.abs(investedValue) / maxAbs) * 100, 0)}%`;
+          bar.appendChild(investedFill);
+        }
+      } else {
+        const fill = document.createElement("div");
+        fill.className = "detail-bar-fill detail-bar-fill-negative";
+        fill.style.width = `${Math.max((Math.abs(item.value) / maxAbs) * 100, 4)}%`;
+        bar.appendChild(fill);
+      }
+
       row.appendChild(name);
       row.appendChild(amount);
       row.appendChild(bar);
@@ -1065,6 +1282,7 @@ function renderDashboard() {
   drawNetWorthChart();
   renderAllocation();
   renderDetailCards();
+  renderTaxManagement();
 }
 
 function showFeedback(message, isError = false) {
@@ -1175,9 +1393,10 @@ function parseNumberValue(value) {
 }
 
 function extractCategoryFromItem(itemName, fallbackCategory = "") {
-  const match = String(itemName).match(/\((부동산|투자|연금|저축)\)\s*$/);
-  if (match) return match[1];
-  return fallbackCategory || "투자";
+  const category = extractTrailingCategory(itemName);
+  if (category) return category;
+  const fallback = String(fallbackCategory ?? "").trim();
+  return fallback || "투자";
 }
 
 function buildDataFromExcelRows(rows, sourceFileName, sheetName) {
@@ -1191,6 +1410,7 @@ function buildDataFromExcelRows(rows, sourceFileName, sheetName) {
   const categoryKey = resolveHeaderKey(headers, ["category", "카테고리", "분류"]);
   const netWorthKey = resolveHeaderKey(headers, ["networth", "평가금액", "순자산", "자산"]);
   const investedKey = resolveHeaderKey(headers, ["invested", "투자원금", "원금", "투자금"]);
+  const monthlyInvestedKey = resolveHeaderKey(headers, ["월투자액", "월투자", "당월투자", "월납입", "monthlyinvested"]);
 
   if (!dateKey || !itemKey || !categoryKey || !netWorthKey || !investedKey) {
     throw new Error("엑셀 헤더를 찾을 수 없습니다. (월/세부항목명/카테고리/평가금액/투자원금 필요)");
@@ -1208,6 +1428,7 @@ function buildDataFromExcelRows(rows, sourceFileName, sheetName) {
         date,
         categories: {},
         investedCategories: {},
+        monthlyInvestedCategories: {},
       });
     }
 
@@ -1215,6 +1436,9 @@ function buildDataFromExcelRows(rows, sourceFileName, sheetName) {
     const key = `${itemName} (${category})`;
     record.categories[key] = parseNumberValue(row[netWorthKey]);
     record.investedCategories[key] = parseNumberValue(row[investedKey]);
+    if (monthlyInvestedKey) {
+      record.monthlyInvestedCategories[key] = parseNumberValue(row[monthlyInvestedKey]);
+    }
   });
 
   const records = [...recordMap.values()];
@@ -1304,7 +1528,12 @@ function inferMetricTypeFromText(text) {
     normalized.includes("누적투자") ||
     normalized.includes("누적원금") ||
     normalized.includes("총투자") ||
-    normalized.includes("invested");
+    normalized.includes("invested") ||
+    normalized.includes("월투자");
+
+  if (isMonthlyFlowMetric && isInvestedMetric) {
+    return "monthlyInvested";
+  }
 
   if (
     isInvestedMetric &&
@@ -1397,9 +1626,9 @@ function buildDataFromExcelMatrix(matrix, sourceFileName, sheetName) {
     const itemNameRaw = firstCell || secondCell;
     if (!itemNameRaw) continue;
 
-    const categoryFromCol = ["부동산", "투자", "연금", "저축"].includes(secondCell) ? secondCell : "";
+    const categoryFromCol = secondCell;
     const category = extractCategoryFromItem(itemNameRaw, categoryFromCol);
-    const pureItemName = String(itemNameRaw).replace(/\s*\((부동산|투자|연금|저축)\)\s*$/, "").trim();
+    const pureItemName = stripTrailingCategory(itemNameRaw);
     if (!pureItemName) continue;
     const key = `${pureItemName} (${category})`;
 
@@ -1411,10 +1640,13 @@ function buildDataFromExcelMatrix(matrix, sourceFileName, sheetName) {
           date,
           categories: {},
           investedCategories: {},
+          monthlyInvestedCategories: {},
         });
       }
       const target = recordMap.get(date);
-      if (currentMetricType === "invested") {
+      if (currentMetricType === "monthlyInvested") {
+        target.monthlyInvestedCategories[key] = numeric;
+      } else if (currentMetricType === "invested") {
         target.investedCategories[key] = numeric;
       } else {
         target.categories[key] = numeric;
@@ -1437,10 +1669,16 @@ function buildDataFromExcelMatrix(matrix, sourceFileName, sheetName) {
   records.forEach((record) => {
     record.categories = record.categories ?? {};
     record.investedCategories = record.investedCategories ?? {};
-    const allKeys = new Set([...Object.keys(record.categories), ...Object.keys(record.investedCategories)]);
+    record.monthlyInvestedCategories = record.monthlyInvestedCategories ?? {};
+    const allKeys = new Set([
+      ...Object.keys(record.categories),
+      ...Object.keys(record.investedCategories),
+      ...Object.keys(record.monthlyInvestedCategories),
+    ]);
     allKeys.forEach((key) => {
       if (!(key in record.categories)) record.categories[key] = 0;
       if (!(key in record.investedCategories)) record.investedCategories[key] = 0;
+      if (!(key in record.monthlyInvestedCategories)) record.monthlyInvestedCategories[key] = 0;
     });
   });
 
@@ -1483,6 +1721,17 @@ function findDateColumnInfo(matrix) {
 }
 
 function resolveColumnItemName(matrix, colIndex, dateRowStart) {
+  // 규칙: 2행(인덱스 1)은 세부자산명
+  const secondRowItem = getMergedAwareHeaderText(matrix, 1, colIndex);
+  if (
+    secondRowItem &&
+    !inferMetricTypeFromText(secondRowItem) &&
+    !isDerivedMetricText(secondRowItem) &&
+    !toRecordDateFromExcelValue(secondRowItem)
+  ) {
+    return secondRowItem;
+  }
+
   for (let row = dateRowStart - 1; row >= 0; row -= 1) {
     const value = getMergedAwareHeaderText(matrix, row, colIndex);
     if (!value) continue;
@@ -1505,13 +1754,23 @@ function resolveColumnMetricType(matrix, colIndex, dateRowStart) {
 }
 
 function resolveColumnCategory(matrix, colIndex, dateRowStart) {
-  const knownCategories = new Set(["부동산", "투자", "연금", "저축"]);
+  // 규칙: 1행(인덱스 0)은 카테고리
+  const firstRowCategory = getMergedAwareHeaderText(matrix, 0, colIndex);
+  if (
+    firstRowCategory &&
+    !inferMetricTypeFromText(firstRowCategory) &&
+    !isDerivedMetricText(firstRowCategory) &&
+    !toRecordDateFromExcelValue(firstRowCategory)
+  ) {
+    return firstRowCategory;
+  }
+
   for (let row = dateRowStart - 1; row >= 0; row -= 1) {
     const value = getMergedAwareHeaderText(matrix, row, colIndex);
     if (!value) continue;
-    if (knownCategories.has(value)) {
-      return value;
-    }
+    if (inferMetricTypeFromText(value) || isDerivedMetricText(value)) continue;
+    if (toRecordDateFromExcelValue(value)) continue;
+    return value;
   }
   return "";
 }
@@ -1549,7 +1808,7 @@ function buildDataFromExcelDateRows(matrix, sourceFileName, sheetName) {
     if (!metricType) continue;
     const categoryFromHeader = resolveColumnCategory(matrix, col, dateRowStart);
     const category = extractCategoryFromItem(itemName, categoryFromHeader);
-    const pureItemName = String(itemName).replace(/\s*\((부동산|투자|연금|저축)\)\s*$/, "").trim();
+    const pureItemName = stripTrailingCategory(itemName);
     if (!pureItemName) continue;
     const key = `${pureItemName} (${category})`;
     columnMappings.push({ colIndex: col, key, metricType });
@@ -1587,13 +1846,16 @@ function buildDataFromExcelDateRows(matrix, sourceFileName, sheetName) {
         date,
         categories: {},
         investedCategories: {},
+        monthlyInvestedCategories: {},
       });
     }
 
     const target = recordMap.get(date);
     uniqueMappings.forEach(({ colIndex, key, metricType }) => {
       const numeric = parseNumberValue(row[colIndex]);
-      if (metricType === "invested") {
+      if (metricType === "monthlyInvested") {
+        target.monthlyInvestedCategories[key] = numeric;
+      } else if (metricType === "invested") {
         target.investedCategories[key] = numeric;
         // 일부 항목(예: 보증금/대출)은 총액 컬럼 없이 투자액만 존재한다.
         // 이 경우 투자액을 순자산 값으로도 사용해 누락을 방지한다.
@@ -1612,10 +1874,16 @@ function buildDataFromExcelDateRows(matrix, sourceFileName, sheetName) {
   }
 
   records.forEach((record) => {
-    const allKeys = new Set([...Object.keys(record.categories), ...Object.keys(record.investedCategories)]);
+    record.monthlyInvestedCategories = record.monthlyInvestedCategories ?? {};
+    const allKeys = new Set([
+      ...Object.keys(record.categories),
+      ...Object.keys(record.investedCategories),
+      ...Object.keys(record.monthlyInvestedCategories),
+    ]);
     allKeys.forEach((key) => {
       if (!(key in record.categories)) record.categories[key] = 0;
       if (!(key in record.investedCategories)) record.investedCategories[key] = 0;
+      if (!(key in record.monthlyInvestedCategories)) record.monthlyInvestedCategories[key] = 0;
     });
   });
 
@@ -1778,6 +2046,33 @@ function bindDataControls() {
   });
 }
 
+function bindTabs() {
+  const tabButtons = [...document.querySelectorAll(".tab-button[data-tab-target]")];
+  const tabPanels = [...document.querySelectorAll(".tab-panel")];
+
+  if (!tabButtons.length || !tabPanels.length) return;
+
+  function activateTab(targetId) {
+    tabButtons.forEach((button) => {
+      const isActive = button.dataset.tabTarget === targetId;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    tabPanels.forEach((panel) => {
+      panel.classList.toggle("is-active", panel.id === targetId);
+    });
+  }
+
+  tabButtons.forEach((button, index) => {
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", index === 0 ? "true" : "false");
+    button.addEventListener("click", () => {
+      activateTab(button.dataset.tabTarget);
+    });
+  });
+}
+
 function getCurrentMonthRecordDate() {
   const now = new Date();
   return buildRecordDate(now.getFullYear(), now.getMonth() + 1);
@@ -1794,6 +2089,7 @@ function createInitialEmptyData() {
         date: recordDate,
         categories: {},
         investedCategories: {},
+        monthlyInvestedCategories: {},
       },
     ],
     latestAllocation: {},
@@ -1803,3 +2099,4 @@ function createInitialEmptyData() {
 setData(createInitialEmptyData());
 renderDashboard();
 bindDataControls();
+bindTabs();
