@@ -354,7 +354,7 @@ function renderTaxManagement() {
   setText("isaTotalLimitText", formatWonFull(isaLimit));
   setText("isaPaidFullText", formatWonFull(isaPaid));
   setText("isaRemainingLimitText", formatWonFull(isaRemainingLimit));
-  setText("isaMonthlyGuideText", `💡 매달 ${formatWonFull(isaMonthlyTarget)}씩 납입하면 목표를 달성할 수 있어요!`);
+  setText("isaMonthlyGuideText", `💡 매달 ${formatWonFull(isaMonthlyTarget)}씩 납입하면 올해 목표를 달성할 수 있어요!`);
   setText(
     "isaLimitMeta",
     `한도 계산 기준: ${ISA_OPEN_YEAR}년 개설, 매년 1월 ${formatManwon(ISA_ANNUAL_LIMIT)} 증액, 최대 ${formatManwon(ISA_MAX_LIMIT)}`
