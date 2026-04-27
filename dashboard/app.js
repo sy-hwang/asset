@@ -2040,17 +2040,138 @@ function parseWorkbookToData(workbook, sourceFileName) {
   return bestCandidate.parsed;
 }
 
+function extractSpreadsheetIdFromUrl(urlText) {
+  const match = String(urlText).match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match?.[1] ?? "";
+}
+
+function extractSheetGidFromUrl(urlText) {
+  const gidMatch = String(urlText).match(/[?&#]gid=(\d+)/);
+  return gidMatch?.[1] ?? "";
+}
+
+function buildGoogleCsvCandidateUrls(urlText) {
+  const input = String(urlText).trim();
+  if (!input) {
+    throw new Error("URL이 비어 있습니다.");
+  }
+
+  if (/^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(input)) {
+    const spreadsheetId = extractSpreadsheetIdFromUrl(input);
+    if (!spreadsheetId) {
+      throw new Error("Google Spreadsheet ID를 찾지 못했습니다.");
+    }
+    const gid = extractSheetGidFromUrl(input);
+    const base = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+    if (gid) {
+      return [
+        `${base}/export?format=csv&gid=${gid}`,
+        `${base}/gviz/tq?tqx=out:csv&gid=${gid}`,
+      ];
+    }
+    return [
+      `${base}/export?format=csv`,
+      `${base}/gviz/tq?tqx=out:csv`,
+    ];
+  }
+
+  return [input];
+}
+
+async function importFromPublicGoogleCsv(urlText) {
+  if (!window.XLSX) {
+    throw new Error("엑셀 파서 로드에 실패했습니다.");
+  }
+
+  const csvUrls = buildGoogleCsvCandidateUrls(urlText);
+  const csvText = await fetchCsvTextWithCorsFallback(csvUrls);
+  const workbook = window.XLSX.read(csvText, {
+    type: "string",
+    cellDates: true,
+  });
+
+  const parsedData = parseWorkbookToData(workbook, "Google Spreadsheet (CSV)");
+  setData(parsedData);
+  renderDashboard();
+}
+
+async function fetchCsvTextWithCorsFallback(csvUrls) {
+  let lastDirectError = null;
+  let lastProxyError = null;
+
+  for (const csvUrl of csvUrls) {
+    try {
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        throw new Error(`CSV 요청 실패 (${response.status})`);
+      }
+      return await response.text();
+    } catch (directFetchError) {
+      lastDirectError = directFetchError;
+    }
+
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}`;
+    try {
+      const proxyResponse = await fetch(proxyUrl);
+      if (!proxyResponse.ok) {
+        throw new Error(`프록시 응답 ${proxyResponse.status}`);
+      }
+      return await proxyResponse.text();
+    } catch (proxyError) {
+      lastProxyError = proxyError;
+    }
+  }
+
+  throw new Error(buildCsvFetchFailureMessage(lastDirectError, lastProxyError));
+}
+
+function buildCsvFetchFailureMessage(directFetchError, proxyError) {
+  const isFileProtocol = window.location.protocol === "file:";
+  const reasons = [
+    "Google Spreadsheet가 '링크가 있는 모든 사용자' 이상으로 공개되어 있는지 확인하세요.",
+    "시트 URL에 접근 가능한지 브라우저에서 먼저 직접 열어 확인하세요.",
+  ];
+  if (isFileProtocol) {
+    reasons.push("현재 file:// 실행 환경이라 CORS 제약이 큽니다. http://localhost 로 실행해 주세요.");
+  }
+
+  return [
+    "CSV 요청에 실패했습니다.",
+    `직접 호출 오류: ${directFetchError?.message ?? "알 수 없음"}`,
+    `프록시 호출 오류: ${proxyError?.message ?? "알 수 없음"}`,
+    ...reasons,
+  ].join(" ");
+}
+
 function bindDataControls() {
   const importExcelButton = document.getElementById("importExcelButton");
+  const importGoogleCsvButton = document.getElementById("importGoogleCsvButton");
   const importExcelInput = document.getElementById("importExcelInput");
   const privateModeButton = document.getElementById("privateModeButton");
 
-  if (!importExcelButton || !importExcelInput) {
+  if (!importExcelButton || !importGoogleCsvButton || !importExcelInput) {
     return;
   }
 
   importExcelButton.addEventListener("click", () => {
     importExcelInput.click();
+  });
+
+  importGoogleCsvButton.addEventListener("click", async () => {
+    const inputUrl = window.prompt(
+      "Google Spreadsheet 공개 링크 또는 CSV export URL을 입력하세요."
+    );
+
+    if (!inputUrl) {
+      return;
+    }
+
+    try {
+      await importFromPublicGoogleCsv(inputUrl);
+      showFeedback("Google Spreadsheet CSV 데이터를 불러왔습니다.");
+    } catch (error) {
+      showFeedback(`CSV 가져오기 실패: ${error.message}`, true);
+    }
   });
 
   importExcelInput.addEventListener("change", async (event) => {
