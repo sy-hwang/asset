@@ -194,6 +194,36 @@ body {
   display: block;
 }
 
+.asset-detail-panel {
+  padding: 24px;
+}
+
+.detail-sections-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+.detail-section-card {
+  padding: 24px;
+}
+
+.detail-subpanel + .detail-subpanel {
+  margin-top: 22px;
+}
+
+.detail-subpanel-header {
+  margin: 0 0 10px;
+}
+
+.detail-subpanel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #2f3437;
+}
+
 .tax-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -481,6 +511,121 @@ svg {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.monthly-overview-card {
+  background: #ffffff;
+}
+
+.monthly-bars {
+  display: grid;
+  gap: 14px;
+}
+
+.monthly-metric-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.monthly-metric-title {
+  font-size: 13px;
+}
+
+.monthly-metric-total {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.monthly-profit-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(55, 53, 47, 0.08);
+  overflow: hidden;
+}
+
+.monthly-profit-bar-wrap {
+  grid-column: 1 / -1;
+  position: relative;
+  padding-top: 14px;
+}
+
+.monthly-profit-center {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 3px;
+  background: #2f3437;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95);
+  z-index: 3;
+}
+
+.monthly-profit-zero-label {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 800;
+  color: #2f3437;
+  background: #ffffff;
+  border: 1px solid rgba(47, 52, 55, 0.2);
+  padding: 0 6px;
+  border-radius: 999px;
+  z-index: 4;
+}
+
+.monthly-profit-empty-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(55, 53, 47, 0.14);
+  z-index: 1;
+}
+
+.monthly-profit-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 0;
+  min-width: 1px;
+  z-index: 2;
+}
+
+.monthly-profit-fill.is-positive {
+  background: #2a9a68;
+}
+
+.monthly-profit-fill.is-negative {
+  background: #e06a52;
+}
+
+.monthly-profit-legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.monthly-legend-item {
+  font-size: 11px;
+  color: #2f3437;
+  border: 1px solid rgba(55, 53, 47, 0.08);
+  border-radius: 999px;
+  padding: 3px 7px;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.monthly-legend-item.is-highlight {
+  transform: translateY(-1px);
+  color: #1f2428;
+  font-weight: 800;
+  border-color: rgba(47, 52, 55, 0.62) !important;
+  box-shadow: 0 4px 14px rgba(47, 52, 55, 0.24);
+  filter: saturate(1.18) contrast(1.05);
+}
+
 .detail-card-header {
   display: flex;
   align-items: flex-start;
@@ -490,14 +635,14 @@ svg {
 
 .detail-card-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .detail-card-total {
   margin: 6px 0 0;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -508,6 +653,36 @@ svg {
   height: 14px;
   margin-top: 6px;
   border-radius: 999px;
+}
+
+.detail-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-collapse-button {
+  border: none;
+  background: transparent;
+  color: #5f666d;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.detail-collapse-button:hover {
+  color: #2f3437;
+}
+
+.detail-card.is-collapsed .detail-card-body {
+  display: none;
 }
 
 .detail-list {
@@ -552,12 +727,12 @@ svg {
 
 .detail-trend-label {
   fill: var(--muted);
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .detail-trend-value {
   fill: var(--text);
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 700;
 }
 
@@ -574,11 +749,11 @@ svg {
 }
 
 .detail-item strong {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .detail-item span {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -694,6 +869,10 @@ svg {
   }
 
   .tax-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-sections-grid {
     grid-template-columns: 1fr;
   }
 
