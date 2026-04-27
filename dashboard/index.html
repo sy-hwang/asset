@@ -37,6 +37,7 @@
       <nav class="tab-nav" aria-label="대시보드 탭">
         <button type="button" class="tab-button is-active" data-tab-target="overviewTabPanel">Overview</button>
         <button type="button" class="tab-button" data-tab-target="taxTabPanel">절세관리</button>
+        <button type="button" class="tab-button" data-tab-target="assetDetailTabPanel">세부내역</button>
       </nav>
 
       <section id="overviewTabPanel" class="tab-panel is-active">
@@ -88,6 +89,16 @@
               <svg id="allocationDonut" viewBox="0 0 320 320" role="img" aria-label="카테고리별 자산 구성 도넛 그래프"></svg>
             </div>
             <div id="allocationList" class="allocation-list"></div>
+          </section>
+
+          <section class="panel panel-full">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Cumulative Breakdown</p>
+                <h2>누적 세부 내역</h2>
+              </div>
+            </div>
+            <div id="overviewCumulativeCards"></div>
           </section>
 
           <section class="panel panel-full">
@@ -155,6 +166,30 @@
               <p id="isaMonthlyGuideText" class="tax-guide">매달 0원씩 납입하면 올해 목표를 달성할 수 있어요!</p>
               <p id="isaLimitMeta" class="tax-meta">한도 계산 기준: 2024년 개설, 매년 1월 2,000만원 증액, 최대 1억원</p>
             </div>
+          </article>
+        </section>
+      </section>
+
+      <section id="assetDetailTabPanel" class="tab-panel">
+        <section class="detail-sections-grid">
+          <article class="panel detail-section-card">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Monthly Detail</p>
+                <h2>월세부내역</h2>
+              </div>
+            </div>
+            <div id="monthlyDetailCards" class="detail-card-grid"></div>
+          </article>
+
+          <article class="panel detail-section-card">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Asset Detail</p>
+                <h2>자산별세부내역</h2>
+              </div>
+            </div>
+            <div id="assetDetailCards" class="detail-card-grid"></div>
           </article>
         </section>
       </section>

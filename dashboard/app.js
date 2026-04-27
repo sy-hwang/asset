@@ -4,6 +4,7 @@ let previous = null;
 let chartRecords = [];
 let isPrivateMode = false;
 const VALUE_GRID_STEP = 50000000;
+const VALUE_GRID_STEP_PX = 90;
 const INVESTED_COLOR = "#ffd400";
 const INVESTED_POINT_FILL = "#fffbe0";
 const DEFAULT_TEXT_COLOR = "#2f3437";
@@ -360,7 +361,8 @@ function setProgressWidth(id, value, limit) {
 
 function renderSummary() {
   const changeRate = previous.netWorth === 0 ? 0 : latest.delta / previous.netWorth;
-  const profitRate = latest.invested === 0 ? 0 : latest.profit / latest.invested;
+  const monthlyInvested = sumValues(latest.monthlyInvestedCategories ?? {});
+  const monthlyProfitDelta = latest.profit - previous.profit;
   const sourceMeta = [data.sourceFile, data.sheetName].filter(Boolean).join(" · ");
 
   setText("updatedMonth", latest.date);
@@ -368,9 +370,9 @@ function renderSummary() {
   setText("netWorthValue", formatEokMasked(latest.netWorth));
   setText("netWorthSubtext", `전월 대비 ${formatSignedMasked(latest.delta)} (${percent.format(changeRate)})`);
   setText("investedValue", formatEokMasked(latest.invested));
-  setText("profitRateValue", `누적 수익률 ${percent.format(profitRate)}`);
+  setText("profitRateValue", `월 투자원금 ${formatSignedMasked(monthlyInvested)}`);
   setText("profitValue", formatEokMasked(latest.profit));
-  setText("latestDeltaValue", `최근 한 달 증감 ${formatSignedMasked(latest.delta)}`);
+  setText("latestDeltaValue", `월수익금 ${formatSignedMasked(monthlyProfitDelta)}`);
 }
 
 function renderTaxManagement() {
@@ -435,22 +437,64 @@ function buildLineSegments(points, valueKey) {
   return segments;
 }
 
-function drawSeries(svg, points, valueKey, lineClass, lineAttrs, markerAttrs) {
+function drawSeries(
+  svg,
+  points,
+  valueKey,
+  lineClass,
+  lineAttrs,
+  markerAttrs,
+  markerAttrsResolver = null
+) {
   const segments = buildLineSegments(points, valueKey);
   segments.forEach((segment) => {
-    const d = segment
-      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.yMap[valueKey]}`)
-      .join(" ");
-    svg.appendChild(makeSvgNode("path", { d, class: lineClass, ...lineAttrs }));
+    let run = [];
+    let runIsNegative = null;
+    segment.forEach((point) => {
+      const isNegative = Number(point[valueKey] ?? 0) < 0;
+      if (runIsNegative === null || runIsNegative === isNegative) {
+        run.push(point);
+        runIsNegative = isNegative;
+        return;
+      }
+      if (run.length >= 2) {
+        const d = run.map((runPoint, index) => `${index === 0 ? "M" : "L"} ${runPoint.x} ${runPoint.yMap[valueKey]}`).join(" ");
+        svg.appendChild(
+          makeSvgNode("path", {
+            d,
+            class: lineClass,
+            ...lineAttrs,
+            ...(runIsNegative ? { stroke: "#e06a52" } : {}),
+          })
+        );
+      }
+      run = [point];
+      runIsNegative = isNegative;
+    });
+
+    if (run.length >= 2) {
+      const d = run.map((runPoint, index) => `${index === 0 ? "M" : "L"} ${runPoint.x} ${runPoint.yMap[valueKey]}`).join(" ");
+      svg.appendChild(
+        makeSvgNode("path", {
+          d,
+          class: lineClass,
+          ...lineAttrs,
+          ...(runIsNegative ? { stroke: "#e06a52" } : {}),
+        })
+      );
+    }
   });
 
   points.forEach((point) => {
     if (point[valueKey] === null || point.yMap[valueKey] === null) return;
+    const resolvedMarkerAttrs =
+      typeof markerAttrsResolver === "function" ? markerAttrsResolver(point, valueKey) ?? {} : {};
     svg.appendChild(
       makeSvgNode("circle", {
         cx: point.x,
         cy: point.yMap[valueKey],
         ...markerAttrs,
+        ...resolvedMarkerAttrs,
       })
     );
   });
@@ -586,8 +630,8 @@ function drawNetWorthChart() {
     visibility: "hidden",
     "pointer-events": "none",
   });
-  const tooltipWidth = 540;
-  const tooltipHeight = 276;
+  const tooltipWidth = Math.min(420, width - 16);
+  const tooltipHeight = 188;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
@@ -599,37 +643,37 @@ function drawNetWorthChart() {
   });
   const tooltipDate = makeSvgNode("text", {
     x: 28,
-    y: 52,
+    y: 42,
     fill: "#2f3437",
-    "font-size": "28",
+    "font-size": "24",
     "font-weight": "700",
   });
   const tooltipNet = makeSvgNode("text", {
     x: 28,
-    y: 108,
+    y: 78,
     fill: "#157a6e",
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipInvested = makeSvgNode("text", {
     x: 28,
-    y: 154,
+    y: 112,
     fill: INVESTED_COLOR,
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipProfit = makeSvgNode("text", {
     x: 28,
-    y: 200,
+    y: 146,
     fill: DEFAULT_TEXT_COLOR,
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipProfitRate = makeSvgNode("text", {
     x: 28,
-    y: 246,
+    y: 176,
     fill: "#2f3437",
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   tooltipGroup.appendChild(tooltipRect);
@@ -686,11 +730,12 @@ function drawNetWorthChart() {
         ? "누적 수익률 -"
         : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
 
-    const tooltipX = Math.min(Math.max(point.x + 10, padding.left), width - padding.right - tooltipWidth);
-    const tooltipY = Math.min(
-      Math.max((point.yMap.netWorth ?? padding.top) - tooltipHeight - 8, padding.top + 2),
-      padding.top + chartHeight - tooltipHeight
-    );
+    const minTooltipX = 2;
+    const maxTooltipX = Math.max(width - tooltipWidth - 2, minTooltipX);
+    const tooltipX = Math.min(Math.max(point.x + 10, minTooltipX), maxTooltipX);
+    const minTooltipY = 2;
+    const maxTooltipY = Math.max(height - tooltipHeight - 2, minTooltipY);
+    const tooltipY = Math.min(Math.max((point.yMap.netWorth ?? padding.top) - tooltipHeight - 8, minTooltipY), maxTooltipY);
     tooltipGroup.setAttribute("transform", `translate(${tooltipX} ${tooltipY})`);
   }
 
@@ -835,6 +880,16 @@ function getCategoryTrend(category) {
     });
 }
 
+function getAssetTrend(assetName) {
+  return data.records
+    .filter((record) => record.date >= "2025/09")
+    .map((record) => ({
+      date: record.date,
+      netWorth: Number(record.categories?.[assetName] ?? 0),
+      invested: Number(record.investedCategories?.[assetName] ?? 0),
+    }));
+}
+
 function getTrendValues(points) {
   return points.flatMap((item) => [item.netWorth, item.invested]).filter((value) => value !== null);
 }
@@ -911,18 +966,22 @@ function createScaleFromUnit(bounds, valuePerPixel, chartHeight) {
   };
 }
 
-function renderTrendChart(points, _color, height = 140, scale = null) {
+function renderTrendChart(points, _color, _height = 140, scale = null) {
   const width = 920;
   const padding = { top: 18, right: 76, bottom: 28, left: 56 };
   const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
   const values = getTrendValues(points);
 
   if (values.length === 0) {
-    return makeSvgNode("svg", { viewBox: `0 0 ${width} ${height}` });
+    const emptyHeight = padding.top + VALUE_GRID_STEP_PX + padding.bottom;
+    return makeSvgNode("svg", { viewBox: `0 0 ${width} ${emptyHeight}` });
   }
 
   const localBounds = getSteppedTrendBounds(values, VALUE_GRID_STEP);
+  const localSteppedMin = Math.floor(localBounds.min / VALUE_GRID_STEP) * VALUE_GRID_STEP;
+  const localSteppedMax = Math.ceil(localBounds.max / VALUE_GRID_STEP) * VALUE_GRID_STEP;
+  const localStepCount = Math.max(Math.round((localSteppedMax - localSteppedMin) / VALUE_GRID_STEP), 2);
+  const fixedChartHeight = localStepCount * VALUE_GRID_STEP_PX;
   const resolvedScale =
     scale && Number.isFinite(scale.min) && Number.isFinite(scale.max)
       ? {
@@ -931,9 +990,34 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
           range: Math.max(scale.max - scale.min, 1),
         }
       : scale && Number.isFinite(scale.valuePerPixel)
-        ? createScaleFromUnit(localBounds, scale.valuePerPixel, chartHeight)
+        ? createScaleFromUnit(localBounds, scale.valuePerPixel, fixedChartHeight)
         : localBounds;
-  const { min, max, range } = resolvedScale;
+  let min = Math.floor(resolvedScale.min / VALUE_GRID_STEP) * VALUE_GRID_STEP;
+  let max = Math.ceil(resolvedScale.max / VALUE_GRID_STEP) * VALUE_GRID_STEP;
+
+  if (max <= min) {
+    max = min + VALUE_GRID_STEP;
+  }
+
+  const currentStepCount = Math.round((max - min) / VALUE_GRID_STEP);
+  if (currentStepCount < 2) {
+    if (min >= 0) {
+      max = min + VALUE_GRID_STEP * 2;
+    } else {
+      min -= VALUE_GRID_STEP;
+      max += VALUE_GRID_STEP;
+    }
+  }
+
+  if (localBounds.min >= 0 && min < 0) {
+    max -= min;
+    min = 0;
+  }
+
+  const range = Math.max(max - min, VALUE_GRID_STEP * 2);
+  const gridValues = getGridValuesByStep(min, max, VALUE_GRID_STEP);
+  const chartHeight = Math.max((gridValues.length - 1) * VALUE_GRID_STEP_PX, VALUE_GRID_STEP_PX * 2);
+  const height = padding.top + chartHeight + padding.bottom;
 
   const svg = makeSvgNode("svg", {
     viewBox: `0 0 ${width} ${height}`,
@@ -941,7 +1025,6 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
     "aria-label": "월별 추이 그래프",
   });
 
-  const gridValues = getGridValuesByStep(min, max, VALUE_GRID_STEP);
   gridValues.forEach((gridValue) => {
     const y = padding.top + chartHeight - ((gridValue - min) / range) * chartHeight;
     svg.appendChild(
@@ -990,7 +1073,13 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
         fill: INVESTED_POINT_FILL,
         stroke: INVESTED_COLOR,
         "stroke-width": 3.2,
-      }
+      },
+      (point, key) =>
+        point[key] < 0
+          ? {
+              style: "fill: #fff5f2; stroke: #e06a52;",
+            }
+          : {}
     );
   }
 
@@ -1002,10 +1091,16 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
     { stroke: "#157a6e" },
     {
       r: 7.2,
-      class: "detail-trend-point",
       fill: "#ffffff",
       stroke: "#157a6e",
-    }
+      "stroke-width": 3.4,
+    },
+    (point, key) =>
+      point[key] < 0
+        ? {
+            style: "fill: #fff5f2; stroke: #e06a52;",
+          }
+        : {}
   );
 
   const first = mapped[0];
@@ -1065,8 +1160,8 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
     visibility: "hidden",
     "pointer-events": "none",
   });
-  const tooltipWidth = 540;
-  const tooltipHeight = 276;
+  const tooltipWidth = Math.min(420, width - 16);
+  const tooltipHeight = 188;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
@@ -1078,37 +1173,37 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
   });
   const tooltipDate = makeSvgNode("text", {
     x: 28,
-    y: 52,
+    y: 42,
     fill: "#2f3437",
-    "font-size": "28",
+    "font-size": "24",
     "font-weight": "700",
   });
   const tooltipNet = makeSvgNode("text", {
     x: 28,
-    y: 108,
+    y: 78,
     fill: "#157a6e",
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipInvested = makeSvgNode("text", {
     x: 28,
-    y: 154,
+    y: 112,
     fill: INVESTED_COLOR,
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipProfit = makeSvgNode("text", {
     x: 28,
-    y: 200,
+    y: 146,
     fill: DEFAULT_TEXT_COLOR,
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   const tooltipProfitRate = makeSvgNode("text", {
     x: 28,
-    y: 246,
+    y: 176,
     fill: "#2f3437",
-    "font-size": "24",
+    "font-size": "20",
     "font-weight": "700",
   });
   tooltipGroup.appendChild(tooltipRect);
@@ -1165,11 +1260,12 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
         ? "누적 수익률 -"
         : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
 
-    const tooltipX = Math.min(Math.max(point.x + 10, padding.left), width - padding.right - tooltipWidth);
-    const tooltipY = Math.min(
-      Math.max((point.yMap.netWorth ?? padding.top) - tooltipHeight - 8, padding.top + 2),
-      padding.top + chartHeight - tooltipHeight
-    );
+    const minTooltipX = 2;
+    const maxTooltipX = Math.max(width - tooltipWidth - 2, minTooltipX);
+    const tooltipX = Math.min(Math.max(point.x + 10, minTooltipX), maxTooltipX);
+    const minTooltipY = 2;
+    const maxTooltipY = Math.max(height - tooltipHeight - 2, minTooltipY);
+    const tooltipY = Math.min(Math.max((point.yMap.netWorth ?? padding.top) - tooltipHeight - 8, minTooltipY), maxTooltipY);
     tooltipGroup.setAttribute("transform", `translate(${tooltipX} ${tooltipY})`);
   }
 
@@ -1320,12 +1416,330 @@ function renderDetailCards() {
   });
 }
 
+function getAssetKeys() {
+  return Array.from(
+    new Set(
+      data.records.flatMap((record) => [
+        ...Object.keys(record.categories ?? {}),
+        ...Object.keys(record.investedCategories ?? {}),
+      ])
+    )
+  );
+}
+
+function renderContributionBars(container, metricItems, barSpecs, assetKeys) {
+  container.innerHTML = "";
+
+  const body = document.createElement("div");
+  body.className = "monthly-bars";
+  const sortedColorKeys = [...assetKeys].sort((a, b) => cleanAssetName(a).localeCompare(cleanAssetName(b), "ko"));
+  const assetColorMap = Object.fromEntries(
+    sortedColorKeys.map((key, index) => [key, CATEGORY_PALETTE[index % CATEGORY_PALETTE.length].base])
+  );
+
+  const preparedBars = barSpecs.map((spec) => {
+    const items = metricItems
+      .map((item) => ({ assetKey: item.assetKey, value: Number(item[spec.key] ?? 0) }))
+      .filter((item) => Math.abs(item.value) > 0.5);
+    const positiveItems = items.filter((item) => item.value > 0).sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    const negativeItems = items.filter((item) => item.value < 0).sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    const positiveTotal = positiveItems.reduce((sum, item) => sum + Math.abs(item.value), 0);
+    const negativeTotal = negativeItems.reduce((sum, item) => sum + Math.abs(item.value), 0);
+    return {
+      spec,
+      items,
+      positiveItems,
+      negativeItems,
+      positiveTotal,
+      negativeTotal,
+      total: items.reduce((sum, item) => sum + item.value, 0),
+    };
+  });
+
+  const globalMaxPositive = Math.max(...preparedBars.map((bar) => bar.positiveTotal), 0);
+  const globalMaxNegative = Math.max(...preparedBars.map((bar) => bar.negativeTotal), 0);
+  const sharedScaleAbs = Math.max(globalMaxPositive + globalMaxNegative, 1);
+  const sharedCenterPercent = (globalMaxNegative / sharedScaleAbs) * 100;
+
+  preparedBars.forEach((barData) => {
+    const { spec, items, positiveItems, negativeItems, positiveTotal, negativeTotal, total } = barData;
+
+    const cardRow = document.createElement("article");
+    cardRow.className = "monthly-metric-row";
+
+    const title = document.createElement("strong");
+    title.className = "monthly-metric-title";
+    title.textContent = spec.label;
+
+    const totalText = document.createElement("span");
+    totalText.className = "monthly-metric-total";
+    totalText.textContent = spec.format(total);
+
+    const barWrap = document.createElement("div");
+    barWrap.className = "monthly-profit-bar-wrap";
+    const bar = document.createElement("div");
+    bar.className = "monthly-profit-bar";
+    const center = document.createElement("div");
+    center.className = "monthly-profit-center";
+    bar.appendChild(center);
+    const zeroLabel = document.createElement("span");
+    zeroLabel.className = "monthly-profit-zero-label";
+    zeroLabel.textContent = "0";
+    barWrap.appendChild(zeroLabel);
+    barWrap.appendChild(bar);
+
+    const segmentColorByAsset = {};
+    const centerPercent = sharedCenterPercent;
+    center.style.left = `${centerPercent}%`;
+    zeroLabel.style.left = `${centerPercent}%`;
+
+    const leftEmpty = document.createElement("div");
+    leftEmpty.className = "monthly-profit-empty-zone";
+    leftEmpty.style.left = "0%";
+    leftEmpty.style.width = `${Math.max(centerPercent - (negativeTotal / sharedScaleAbs) * 100, 0)}%`;
+    bar.appendChild(leftEmpty);
+
+    const rightStart = centerPercent + (positiveTotal / sharedScaleAbs) * 100;
+    const rightEmpty = document.createElement("div");
+    rightEmpty.className = "monthly-profit-empty-zone";
+    rightEmpty.style.left = `${Math.min(Math.max(rightStart, 0), 100)}%`;
+    rightEmpty.style.width = `${Math.max(100 - rightStart, 0)}%`;
+    bar.appendChild(rightEmpty);
+
+    let positiveOffset = centerPercent;
+    positiveItems.forEach((item) => {
+      const widthPercent = sharedScaleAbs === 0 ? 0 : (Math.abs(item.value) / sharedScaleAbs) * 100;
+      const segment = document.createElement("div");
+      segment.className = "monthly-profit-fill is-positive";
+      segment.dataset.assetKey = item.assetKey;
+      segment.style.left = `${positiveOffset}%`;
+      segment.style.width = `${widthPercent}%`;
+      const positiveColor = assetColorMap[item.assetKey];
+      segment.style.background = positiveColor;
+      segmentColorByAsset[item.assetKey] = positiveColor;
+      positiveOffset += widthPercent;
+      bar.appendChild(segment);
+    });
+
+    let negativeOffset = centerPercent;
+    negativeItems.forEach((item) => {
+      const widthPercent = sharedScaleAbs === 0 ? 0 : (Math.abs(item.value) / sharedScaleAbs) * 100;
+      const segment = document.createElement("div");
+      segment.className = "monthly-profit-fill is-negative";
+      segment.dataset.assetKey = item.assetKey;
+      segment.style.left = `${negativeOffset - widthPercent}%`;
+      segment.style.width = `${widthPercent}%`;
+      const negativeColor = assetColorMap[item.assetKey];
+      segment.style.background = negativeColor;
+      segmentColorByAsset[item.assetKey] = negativeColor;
+      negativeOffset -= widthPercent;
+      bar.appendChild(segment);
+    });
+
+    const legend = document.createElement("div");
+    legend.className = "monthly-profit-legend";
+    const legendBadgesByAsset = {};
+    items
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .forEach((item) => {
+        const badge = document.createElement("span");
+        badge.className = "monthly-legend-item";
+        badge.dataset.assetKey = item.assetKey;
+        badge.textContent = `${cleanAssetName(item.assetKey)} ${spec.format(item.value)}`;
+        const color = segmentColorByAsset[item.assetKey] ?? assetColorMap[item.assetKey] ?? CATEGORY_PALETTE[0].base;
+        badge.style.borderColor = `${color}66`;
+        badge.style.background = `${color}1A`;
+        legendBadgesByAsset[item.assetKey] = badge;
+        legend.appendChild(badge);
+      });
+
+    const segments = [...bar.querySelectorAll(".monthly-profit-fill")];
+    segments.forEach((segment) => {
+      const assetKey = segment.dataset.assetKey;
+      if (!assetKey) return;
+      segment.addEventListener("mouseenter", () => {
+        const badge = legendBadgesByAsset[assetKey];
+        if (badge) badge.classList.add("is-highlight");
+      });
+      segment.addEventListener("mouseleave", () => {
+        const badge = legendBadgesByAsset[assetKey];
+        if (badge) badge.classList.remove("is-highlight");
+      });
+    });
+
+    cardRow.appendChild(title);
+    cardRow.appendChild(totalText);
+    cardRow.appendChild(barWrap);
+    cardRow.appendChild(legend);
+    body.appendChild(cardRow);
+  });
+
+  container.appendChild(body);
+}
+
+function renderOverviewCumulativePanel() {
+  const container = document.getElementById("overviewCumulativeCards");
+  if (!container) return;
+  const assetKeys = getAssetKeys();
+  const cumulativeMetricItems = assetKeys.map((assetKey) => {
+    const value = Number(latest.categories?.[assetKey] ?? 0);
+    const invested = Number(latest.investedCategories?.[assetKey] ?? 0);
+    return {
+      assetKey,
+      cumulativeInvested: invested,
+      cumulativeProfit: value - invested,
+    };
+  });
+
+  renderContributionBars(
+    container,
+    cumulativeMetricItems,
+    [
+      { key: "cumulativeInvested", label: "누적투자금", format: formatSignedMasked },
+      { key: "cumulativeProfit", label: "누적수익금", format: formatSignedMasked },
+    ],
+    assetKeys
+  );
+}
+
+function renderMonthlyDetailTab() {
+  const monthlyContainer = document.getElementById("monthlyDetailCards");
+  if (!monthlyContainer) return;
+
+  const assetKeys = getAssetKeys();
+  const monthlyMetricItems = assetKeys.map((assetKey) => {
+    const currentValue = Number(latest.categories?.[assetKey] ?? 0);
+    const currentInvested = Number(latest.investedCategories?.[assetKey] ?? 0);
+    const previousValue = Number(previous.categories?.[assetKey] ?? 0);
+    const previousInvested = Number(previous.investedCategories?.[assetKey] ?? 0);
+    const monthlyProfit = currentValue - currentInvested - (previousValue - previousInvested);
+    const monthlyInvested = Number(latest.monthlyInvestedCategories?.[assetKey] ?? 0);
+    return {
+      assetKey,
+      monthlyInvested,
+      monthlyProfit,
+    };
+  });
+
+  renderContributionBars(
+    monthlyContainer,
+    monthlyMetricItems,
+    [
+      { key: "monthlyInvested", label: "이번달투자금", format: formatSignedMasked },
+      { key: "monthlyProfit", label: "이번달수익금", format: formatSignedMasked },
+    ],
+    assetKeys
+  );
+}
+
+function renderAssetDetailTab() {
+  const assetContainer = document.getElementById("assetDetailCards");
+  if (!assetContainer) return;
+
+  assetContainer.innerHTML = "";
+
+  const assetKeys = getAssetKeys();
+
+  assetKeys
+    .map((assetKey) => ({
+      assetKey,
+      category: categorizeAsset(assetKey),
+      value: Number(latest.categories?.[assetKey] ?? 0),
+      invested: Number(latest.investedCategories?.[assetKey] ?? 0),
+      monthlyInvested: Number(latest.monthlyInvestedCategories?.[assetKey] ?? 0),
+      previousValue: Number(previous.categories?.[assetKey] ?? 0),
+      previousInvested: Number(previous.investedCategories?.[assetKey] ?? 0),
+      trend: getAssetTrend(assetKey),
+    }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .forEach((asset) => {
+      const cumulativeProfit = asset.value - asset.invested;
+      const previousCumulativeProfit = asset.previousValue - asset.previousInvested;
+      const monthlyProfit = cumulativeProfit - previousCumulativeProfit;
+      const card = document.createElement("article");
+      card.className = "detail-card";
+      card.style.background = getCategoryTint(asset.category);
+
+      const header = document.createElement("div");
+      header.className = "detail-card-header";
+
+      const headerText = document.createElement("div");
+      const title = document.createElement("h3");
+      title.className = "detail-card-title";
+      title.textContent = cleanAssetName(asset.assetKey);
+
+      const totalText = document.createElement("p");
+      totalText.className = "detail-card-total";
+      totalText.textContent = `${formatKrwMasked(asset.value)} · ${asset.category}`;
+
+      headerText.appendChild(title);
+      headerText.appendChild(totalText);
+
+      const toggleButton = document.createElement("button");
+      toggleButton.type = "button";
+      toggleButton.className = "detail-collapse-button";
+      toggleButton.textContent = "▴";
+      toggleButton.setAttribute("aria-expanded", "true");
+
+      const headerActions = document.createElement("div");
+      headerActions.className = "detail-card-actions";
+      headerActions.appendChild(toggleButton);
+
+      header.appendChild(headerText);
+      header.appendChild(headerActions);
+      card.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "detail-card-body";
+
+      const trendWrap = document.createElement("div");
+      trendWrap.className = "detail-trend";
+      trendWrap.appendChild(renderTrendChart(asset.trend, getCategoryColor(asset.category), 260, null));
+      body.appendChild(trendWrap);
+
+      const list = document.createElement("div");
+      list.className = "detail-list";
+
+      function appendMetricRow(label, valueText) {
+        const row = document.createElement("article");
+        row.className = "detail-item";
+        const name = document.createElement("strong");
+        name.textContent = label;
+        const amount = document.createElement("span");
+        amount.textContent = valueText;
+        amount.style.fontWeight = "700";
+        row.appendChild(name);
+        row.appendChild(amount);
+        list.appendChild(row);
+      }
+
+      appendMetricRow("총액", formatKrwMasked(asset.value));
+      appendMetricRow("투자원금", formatKrwMasked(asset.invested));
+      appendMetricRow("누적수익금", formatSignedMasked(cumulativeProfit));
+      appendMetricRow("이번달투자금", formatSignedMasked(asset.monthlyInvested));
+      appendMetricRow("이번달수익금", formatSignedMasked(monthlyProfit));
+
+      body.appendChild(list);
+      toggleButton.addEventListener("click", () => {
+        const shouldCollapse = !card.classList.contains("is-collapsed");
+        card.classList.toggle("is-collapsed", shouldCollapse);
+        toggleButton.textContent = shouldCollapse ? "▾" : "▴";
+        toggleButton.setAttribute("aria-expanded", shouldCollapse ? "false" : "true");
+      });
+      card.appendChild(body);
+      assetContainer.appendChild(card);
+    });
+}
+
 function renderDashboard() {
   renderSummary();
   drawNetWorthChart();
   renderAllocation();
   renderDetailCards();
+  renderOverviewCumulativePanel();
   renderTaxManagement();
+  renderMonthlyDetailTab();
+  renderAssetDetailTab();
 }
 
 function showFeedback(message, isError = false) {
