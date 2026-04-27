@@ -2,6 +2,7 @@ let data = null;
 let latest = null;
 let previous = null;
 let chartRecords = [];
+let isPrivateMode = false;
 const VALUE_GRID_STEP = 50000000;
 const INVESTED_COLOR = "#ffd400";
 const INVESTED_POINT_FILL = "#fffbe0";
@@ -183,6 +184,45 @@ function formatWonFull(value) {
   return `${Math.round(value || 0).toLocaleString("ko-KR")}원`;
 }
 
+function maskAmount(text, placeholder = "••••") {
+  return isPrivateMode ? placeholder : text;
+}
+
+function formatKrwMasked(value) {
+  return maskAmount(formatKrw(value), "••••원");
+}
+
+function formatEokMasked(value) {
+  return maskAmount(formatEok(value), "••••억");
+}
+
+function formatSignedMasked(value) {
+  return maskAmount(formatSigned(value), "••••원");
+}
+
+function formatAmountShortMasked(value) {
+  return maskAmount(formatAmountShort(value), "••••");
+}
+
+function formatTrendMoneyMasked(value) {
+  return maskAmount(formatTrendMoney(value), "••••");
+}
+
+function formatManwonMasked(value) {
+  return maskAmount(formatManwon(value), "••••만원");
+}
+
+function formatWonFullMasked(value) {
+  return maskAmount(formatWonFull(value), "••••원");
+}
+
+function updatePrivateModeButtonLabel() {
+  const button = document.getElementById("privateModeButton");
+  if (!button) return;
+  button.textContent = `Private Mode: ${isPrivateMode ? "ON" : "OFF"}`;
+  button.classList.toggle("is-active", isPrivateMode);
+}
+
 function setText(id, value) {
   document.getElementById(id).textContent = value;
 }
@@ -325,12 +365,12 @@ function renderSummary() {
 
   setText("updatedMonth", latest.date);
   setText("sourceFile", sourceMeta || "직접 입력 데이터");
-  setText("netWorthValue", formatEok(latest.netWorth));
-  setText("netWorthSubtext", `전월 대비 ${formatSigned(latest.delta)} (${percent.format(changeRate)})`);
-  setText("investedValue", formatEok(latest.invested));
+  setText("netWorthValue", formatEokMasked(latest.netWorth));
+  setText("netWorthSubtext", `전월 대비 ${formatSignedMasked(latest.delta)} (${percent.format(changeRate)})`);
+  setText("investedValue", formatEokMasked(latest.invested));
   setText("profitRateValue", `누적 수익률 ${percent.format(profitRate)}`);
-  setText("profitValue", formatEok(latest.profit));
-  setText("latestDeltaValue", `최근 한 달 증감 ${formatSigned(latest.delta)}`);
+  setText("profitValue", formatEokMasked(latest.profit));
+  setText("latestDeltaValue", `최근 한 달 증감 ${formatSignedMasked(latest.delta)}`);
 }
 
 function renderTaxManagement() {
@@ -349,15 +389,18 @@ function renderTaxManagement() {
   const remainingMonths = Number.isFinite(currentMonth) ? Math.max(13 - currentMonth, 1) : 1;
   const isaMonthlyTarget = Math.ceil(isaRemainingLimit / remainingMonths);
 
-  setText("pensionFundPaidText", `${formatManwon(pensionFundPaid)} / ${formatManwon(PENSION_FUND_LIMIT)}`);
-  setText("irpPaidText", `${formatManwon(irpPaid)} / ${formatManwon(IRP_LIMIT)}`);
-  setText("isaTotalLimitText", formatWonFull(isaLimit));
-  setText("isaPaidFullText", formatWonFull(isaPaid));
-  setText("isaRemainingLimitText", formatWonFull(isaRemainingLimit));
-  setText("isaMonthlyGuideText", `💡 매달 ${formatWonFull(isaMonthlyTarget)}씩 납입하면 올해 목표를 달성할 수 있어요!`);
+  setText("pensionFundPaidText", `${formatManwonMasked(pensionFundPaid)} / ${formatManwonMasked(PENSION_FUND_LIMIT)}`);
+  setText("irpPaidText", `${formatManwonMasked(irpPaid)} / ${formatManwonMasked(IRP_LIMIT)}`);
+  setText("isaTotalLimitText", formatWonFullMasked(isaLimit));
+  setText("isaPaidFullText", formatWonFullMasked(isaPaid));
+  setText("isaRemainingLimitText", formatWonFullMasked(isaRemainingLimit));
+  setText(
+    "isaMonthlyGuideText",
+    `💡 매달 ${formatWonFullMasked(isaMonthlyTarget)}씩 납입하면 올해 목표를 달성할 수 있어요!`
+  );
   setText(
     "isaLimitMeta",
-    `한도 계산 기준: ${ISA_OPEN_YEAR}년 개설, 매년 1월 ${formatManwon(ISA_ANNUAL_LIMIT)} 증액, 최대 ${formatManwon(ISA_MAX_LIMIT)}`
+    `한도 계산 기준: ${ISA_OPEN_YEAR}년 개설, 매년 1월 ${formatManwonMasked(ISA_ANNUAL_LIMIT)} 증액, 최대 ${formatManwonMasked(ISA_MAX_LIMIT)}`
   );
 
   setProgressWidth("pensionFundProgress", pensionFundPaid, PENSION_FUND_LIMIT);
@@ -633,11 +676,11 @@ function drawNetWorthChart() {
     }
 
     tooltipDate.textContent = `${point.date}`;
-    tooltipNet.textContent = `순자산 ${formatKrw(point.netWorth)}`;
+    tooltipNet.textContent = `순자산 ${formatKrwMasked(point.netWorth)}`;
     tooltipInvested.textContent =
-      point.invested === null ? "투자액 -" : `투자액 ${formatKrw(point.invested)}`;
+      point.invested === null ? "투자액 -" : `투자액 ${formatKrwMasked(point.invested)}`;
     tooltipProfit.textContent =
-      point.invested === null ? "수익금 -" : `수익금 ${formatKrw(point.netWorth - point.invested)}`;
+      point.invested === null ? "수익금 -" : `수익금 ${formatKrwMasked(point.netWorth - point.invested)}`;
     tooltipProfitRate.textContent =
       point.invested === null || point.invested <= 0
         ? "누적 수익률 -"
@@ -740,7 +783,7 @@ function renderAllocation() {
     y: cy + 22,
     class: "allocation-center-value",
   });
-  centerValue.textContent = formatAmountShort(total);
+  centerValue.textContent = formatAmountShortMasked(total);
   donut.appendChild(centerValue);
 
   orderedEntries.forEach(([name, value]) => {
@@ -756,7 +799,7 @@ function renderAllocation() {
     title.textContent = name;
 
     const amount = document.createElement("span");
-    amount.textContent = `${formatKrw(value)} · ${percent.format(total === 0 ? 0 : value / total)}`;
+    amount.textContent = `${formatKrwMasked(value)} · ${percent.format(total === 0 ? 0 : value / total)}`;
 
     const track = document.createElement("div");
     track.className = "allocation-track";
@@ -1112,11 +1155,11 @@ function renderTrendChart(points, _color, height = 140, scale = null) {
     }
 
     tooltipDate.textContent = `${point.date}`;
-    tooltipNet.textContent = `순자산 ${formatKrw(point.netWorth)}`;
+    tooltipNet.textContent = `순자산 ${formatKrwMasked(point.netWorth)}`;
     tooltipInvested.textContent =
-      point.invested === null ? "투자액 -" : `투자액 ${formatKrw(point.invested)}`;
+      point.invested === null ? "투자액 -" : `투자액 ${formatKrwMasked(point.invested)}`;
     tooltipProfit.textContent =
-      point.invested === null ? "수익금 -" : `수익금 ${formatKrw(point.netWorth - point.invested)}`;
+      point.invested === null ? "수익금 -" : `수익금 ${formatKrwMasked(point.netWorth - point.invested)}`;
     tooltipProfitRate.textContent =
       point.invested === null || point.invested <= 0
         ? "누적 수익률 -"
@@ -1204,7 +1247,7 @@ function renderDetailCards() {
 
     const totalText = document.createElement("p");
     totalText.className = "detail-card-total";
-    totalText.textContent = formatTrendMoney(total);
+    totalText.textContent = formatTrendMoneyMasked(total);
 
     headerText.appendChild(title);
     headerText.appendChild(totalText);
@@ -1239,7 +1282,7 @@ function renderDetailCards() {
       name.textContent = cleanAssetName(item.name);
 
       const amount = document.createElement("span");
-      amount.textContent = formatKrw(item.value);
+      amount.textContent = formatKrwMasked(item.value);
       amount.style.color = item.value < 0 ? "#e06a52" : "#2c9b62";
       amount.style.fontWeight = "700";
 
@@ -2000,6 +2043,7 @@ function parseWorkbookToData(workbook, sourceFileName) {
 function bindDataControls() {
   const importExcelButton = document.getElementById("importExcelButton");
   const importExcelInput = document.getElementById("importExcelInput");
+  const privateModeButton = document.getElementById("privateModeButton");
 
   if (!importExcelButton || !importExcelInput) {
     return;
@@ -2044,6 +2088,15 @@ function bindDataControls() {
       importExcelInput.value = "";
     }
   });
+
+  if (privateModeButton) {
+    privateModeButton.addEventListener("click", () => {
+      isPrivateMode = !isPrivateMode;
+      updatePrivateModeButtonLabel();
+      renderDashboard();
+    });
+    updatePrivateModeButtonLabel();
+  }
 }
 
 function bindTabs() {
