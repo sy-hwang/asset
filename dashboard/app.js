@@ -1577,31 +1577,6 @@ function renderContributionBars(container, metricItems, barSpecs, assetKeys) {
   container.appendChild(body);
 }
 
-function renderOverviewCumulativePanel() {
-  const container = document.getElementById("overviewCumulativeCards");
-  if (!container) return;
-  const assetKeys = getAssetKeys();
-  const cumulativeMetricItems = assetKeys.map((assetKey) => {
-    const value = Number(latest.categories?.[assetKey] ?? 0);
-    const invested = Number(latest.investedCategories?.[assetKey] ?? 0);
-    return {
-      assetKey,
-      cumulativeInvested: invested,
-      cumulativeProfit: value - invested,
-    };
-  });
-
-  renderContributionBars(
-    container,
-    cumulativeMetricItems,
-    [
-      { key: "cumulativeInvested", label: "누적투자금", format: formatSignedMasked },
-      { key: "cumulativeProfit", label: "누적수익금", format: formatSignedMasked },
-    ],
-    assetKeys
-  );
-}
-
 function renderMonthlyDetailTab() {
   const monthlyContainer = document.getElementById("monthlyDetailCards");
   if (!monthlyContainer) return;
@@ -1736,7 +1711,6 @@ function renderDashboard() {
   drawNetWorthChart();
   renderAllocation();
   renderDetailCards();
-  renderOverviewCumulativePanel();
   renderTaxManagement();
   renderMonthlyDetailTab();
   renderAssetDetailTab();
