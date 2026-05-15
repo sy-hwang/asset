@@ -106,6 +106,78 @@ function refreshViewState() {
   chartRecords = data.records.filter((item) => item.date >= "2025/09");
 }
 
+function formatTooltipReturnOrDash(rate) {
+  if (rate === null || !Number.isFinite(rate)) return "-";
+  return percent.format(rate);
+}
+
+function formatTooltipReturnRatesLine(rates) {
+  const cum = formatTooltipReturnOrDash(rates.cumulative);
+  const ytd = formatTooltipReturnOrDash(rates.annual);
+  const mon = formatTooltipReturnOrDash(rates.monthly);
+  return `수익률: 누적 ${cum} / 연 ${ytd} / 월 ${mon}`;
+}
+
+/** 전월·연초 순자산 대비(입출금 포함). 누적은 투자원금 대비 평가손익률. */
+function computeCoreTrendTooltipReturns(point) {
+  const empty = { monthly: null, annual: null, cumulative: null };
+  if (!data?.records?.length || !point?.date) return empty;
+
+  const nw = Number(point.netWorth);
+  const inv = Number(point.invested ?? 0);
+  const idx = data.records.findIndex((r) => r.date === point.date);
+
+  let monthly = null;
+  if (idx > 0) {
+    const prevNw = Number(data.records[idx - 1].netWorth);
+    if (Math.abs(prevNw) > 0.5) monthly = (nw - prevNw) / prevNw;
+  }
+
+  const year = Number(String(point.date).split("/")[0]);
+  let annual = null;
+  if (Number.isFinite(year)) {
+    const yearFirst = data.records.find((r) => Number(String(r.date).split("/")[0]) === year);
+    if (yearFirst) {
+      const y0 = Number(yearFirst.netWorth);
+      if (yearFirst.date === point.date) annual = 0;
+      else if (Math.abs(y0) > 0.5) annual = (nw - y0) / y0;
+    }
+  }
+
+  const cumulative = inv > 0.5 ? (nw - inv) / inv : null;
+  return { monthly, annual, cumulative };
+}
+
+/** 표시 구간 시리즈만 사용(카테고리·자산 소형 차트). */
+function computeSliceTrendTooltipReturns(series, index) {
+  const empty = { monthly: null, annual: null, cumulative: null };
+  if (!Array.isArray(series) || index < 0 || index >= series.length) return empty;
+
+  const point = series[index];
+  const nw = Number(point.netWorth);
+  const inv = Number(point.invested ?? 0);
+
+  let monthly = null;
+  if (index > 0) {
+    const prevNw = Number(series[index - 1].netWorth);
+    if (Math.abs(prevNw) > 0.5) monthly = (nw - prevNw) / prevNw;
+  }
+
+  const year = Number(String(point.date).split("/")[0]);
+  let annual = null;
+  if (Number.isFinite(year)) {
+    const yearFirst = series.find((p) => Number(String(p.date).split("/")[0]) === year);
+    if (yearFirst) {
+      const y0 = Number(yearFirst.netWorth);
+      if (yearFirst.date === point.date) annual = 0;
+      else if (Math.abs(y0) > 0.5) annual = (nw - y0) / y0;
+    }
+  }
+
+  const cumulative = inv > 0.5 ? (nw - inv) / inv : null;
+  return { monthly, annual, cumulative };
+}
+
 function validateDataShape(candidate) {
   return candidate && Array.isArray(candidate.records) && candidate.records.length > 0;
 }
@@ -630,50 +702,50 @@ function drawNetWorthChart() {
     visibility: "hidden",
     "pointer-events": "none",
   });
-  const tooltipWidth = Math.min(420, width - 16);
-  const tooltipHeight = 188;
+  const tooltipWidth = Math.min(560, width - 24);
+  const tooltipHeight = 238;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
     width: tooltipWidth,
     height: tooltipHeight,
-    rx: 18,
+    rx: 20,
     fill: "rgba(255, 255, 255, 0.96)",
     stroke: "rgba(47, 52, 55, 0.14)",
   });
   const tooltipDate = makeSvgNode("text", {
-    x: 28,
-    y: 42,
+    x: 32,
+    y: 48,
     fill: "#2f3437",
-    "font-size": "24",
+    "font-size": "28",
     "font-weight": "700",
   });
   const tooltipNet = makeSvgNode("text", {
-    x: 28,
-    y: 78,
+    x: 32,
+    y: 90,
     fill: "#157a6e",
-    "font-size": "20",
+    "font-size": "22",
     "font-weight": "700",
   });
   const tooltipInvested = makeSvgNode("text", {
-    x: 28,
-    y: 112,
+    x: 32,
+    y: 128,
     fill: INVESTED_COLOR,
-    "font-size": "20",
+    "font-size": "22",
     "font-weight": "700",
   });
   const tooltipProfit = makeSvgNode("text", {
-    x: 28,
-    y: 146,
+    x: 32,
+    y: 166,
     fill: DEFAULT_TEXT_COLOR,
-    "font-size": "20",
+    "font-size": "22",
     "font-weight": "700",
   });
-  const tooltipProfitRate = makeSvgNode("text", {
-    x: 28,
-    y: 176,
+  const tooltipReturnRates = makeSvgNode("text", {
+    x: 32,
+    y: 206,
     fill: "#2f3437",
-    "font-size": "20",
+    "font-size": "19",
     "font-weight": "700",
   });
   tooltipGroup.appendChild(tooltipRect);
@@ -681,7 +753,7 @@ function drawNetWorthChart() {
   tooltipGroup.appendChild(tooltipNet);
   tooltipGroup.appendChild(tooltipInvested);
   tooltipGroup.appendChild(tooltipProfit);
-  tooltipGroup.appendChild(tooltipProfitRate);
+  tooltipGroup.appendChild(tooltipReturnRates);
   svg.appendChild(tooltipGroup);
 
   function setTooltipVisible(isVisible) {
@@ -725,10 +797,8 @@ function drawNetWorthChart() {
       point.invested === null ? "투자액 -" : `투자액 ${formatKrwMasked(point.invested)}`;
     tooltipProfit.textContent =
       point.invested === null ? "수익금 -" : `수익금 ${formatKrwMasked(point.netWorth - point.invested)}`;
-    tooltipProfitRate.textContent =
-      point.invested === null || point.invested <= 0
-        ? "누적 수익률 -"
-        : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
+    const rates = computeCoreTrendTooltipReturns(point);
+    tooltipReturnRates.textContent = formatTooltipReturnRatesLine(rates);
 
     const minTooltipX = 2;
     const maxTooltipX = Math.max(width - tooltipWidth - 2, minTooltipX);
@@ -1161,7 +1231,7 @@ function renderTrendChart(points, _color, _height = 140, scale = null) {
     "pointer-events": "none",
   });
   const tooltipWidth = Math.min(420, width - 16);
-  const tooltipHeight = 188;
+  const tooltipHeight = 200;
   const tooltipRect = makeSvgNode("rect", {
     x: 0,
     y: 0,
@@ -1199,11 +1269,11 @@ function renderTrendChart(points, _color, _height = 140, scale = null) {
     "font-size": "20",
     "font-weight": "700",
   });
-  const tooltipProfitRate = makeSvgNode("text", {
+  const tooltipReturnRates = makeSvgNode("text", {
     x: 28,
-    y: 176,
+    y: 178,
     fill: "#2f3437",
-    "font-size": "20",
+    "font-size": "16",
     "font-weight": "700",
   });
   tooltipGroup.appendChild(tooltipRect);
@@ -1211,7 +1281,7 @@ function renderTrendChart(points, _color, _height = 140, scale = null) {
   tooltipGroup.appendChild(tooltipNet);
   tooltipGroup.appendChild(tooltipInvested);
   tooltipGroup.appendChild(tooltipProfit);
-  tooltipGroup.appendChild(tooltipProfitRate);
+  tooltipGroup.appendChild(tooltipReturnRates);
   svg.appendChild(tooltipGroup);
 
   function setTooltipVisible(isVisible) {
@@ -1255,10 +1325,8 @@ function renderTrendChart(points, _color, _height = 140, scale = null) {
       point.invested === null ? "투자액 -" : `투자액 ${formatKrwMasked(point.invested)}`;
     tooltipProfit.textContent =
       point.invested === null ? "수익금 -" : `수익금 ${formatKrwMasked(point.netWorth - point.invested)}`;
-    tooltipProfitRate.textContent =
-      point.invested === null || point.invested <= 0
-        ? "누적 수익률 -"
-        : `누적 수익률 ${percent.format((point.netWorth - point.invested) / point.invested)}`;
+    const rates = computeSliceTrendTooltipReturns(mapped, index);
+    tooltipReturnRates.textContent = formatTooltipReturnRatesLine(rates);
 
     const minTooltipX = 2;
     const maxTooltipX = Math.max(width - tooltipWidth - 2, minTooltipX);
